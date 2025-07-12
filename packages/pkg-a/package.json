@@ -1,0 +1,11 @@
+{
+  "name": "pkg-a",
+  "version": "1.0.0",
+  "description": "Package A",
+  "main": "index.js",
+  "dependencies": {
+    "pkg-b": "^1.0.0"
+  },
+  "devDependencies": {},
+  "peerDependencies": {}
+} 

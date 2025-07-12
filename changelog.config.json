@@ -1,0 +1,15 @@
+{
+  "outputDir": ".",
+  "cacheDir": ".changelog",
+  "commitTypes": ["feat", "fix", "docs", "style", "refactor", "test", "chore", "perf", "ci", "build"],
+  "includeAllCommits": false,
+  "conventionalCommits": true,
+  "dependencyUpdate": true,
+  "excludePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "*.lock",
+    ".git/**",
+    "**/*.test.ts"
+  ]
+} 
