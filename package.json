@@ -1,5 +1,5 @@
 {
-  "name": "monorepo-changelog-cli",
+  "name": "@crow/monorepo-changelog-cli",
   "version": "1.0.0",
   "description": "基于 git commit 记录生成 changelog 的 CLI 工具，主要服务于 pnpm monorepo 架构",
   "main": "dist/index.js",
