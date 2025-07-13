@@ -60,7 +60,7 @@ export class ChangelogGenerator {
         for (const commit of commits) {
           const shortHash = commit.hash.substring(0, 7);
           const message = this.formatCommitMessage(commit.message);
-          lines.push(`- ${message} ([${shortHash}](../../commit/${commit.hash}))`);
+          lines.push(`- ${message} (${shortHash})`);
         }
         lines.push('');
       }
