@@ -2,8 +2,8 @@
 
 <!-- CHANGELOG_METADATA:
 {
-  "lastCommitHash": "03213791c5b8d9459629fb7ba7bc513005fa98e3",
-  "lastUpdateTime": "2025-07-13T03:16:03.319Z",
+  "lastCommitHash": "c2862471def3b6524a1f80d680aca191025d6e31",
+  "lastUpdateTime": "2025-07-13T03:57:53.977Z",
   "packageName": "pkg-a",
   "packagePath": "D:\\code\\mine\\cl\\packages\\pkg-a"
 }
@@ -11,24 +11,22 @@
 
 所有重要的更改都将记录在此文件中。
 
-## [1.0.1] - 2025-07-13
+## [1.0.2] - 2025-07-13
 
-### 📦 依赖更新
+### 🔧 other
 
-- 🐛 更新 pkg-b: 1.0.0 → 1.0.1
+- Tweak (c286247)
 
+### 🔧 其他
 
-## [1.0.0] - 2025-07-13
+- Init changelog (d0b6056)
+- Remote dist (3069ae2)
 
 ### ✨ 新功能
 
 - Add another feature to test path matching (0321379)
 - Add new feature to package A (c7e163d)
 - Initial setup of monorepo with pkg-a and pkg-b (babad32)
-
-### 🔧 其他
-
-- Remote dist (3069ae2)
 
 ### 📚 文档
 
