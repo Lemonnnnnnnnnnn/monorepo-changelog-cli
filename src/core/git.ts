@@ -2,14 +2,17 @@ import { simpleGit, SimpleGit, LogOptions } from 'simple-git';
 import { CommitInfo } from '../types';
 import { glob } from 'glob';
 import path from 'path';
+import { PathMatcher } from '../utils/path-matcher';
 
 export class GitManager {
   private git: SimpleGit;
   private rootPath: string;
+  private pathMatcher: PathMatcher;
 
   constructor(rootPath: string = process.cwd()) {
     this.rootPath = rootPath;
     this.git = simpleGit(rootPath);
+    this.pathMatcher = new PathMatcher(rootPath);
   }
 
   /**
@@ -112,11 +115,9 @@ export class GitManager {
    */
   async doesCommitAffectPath(commitHash: string, targetPath: string): Promise<boolean> {
     const files = await this.getCommitFiles(commitHash);
-    const normalizedPath = path.normalize(targetPath);
     
     return files.some(file => {
-      const normalizedFile = path.normalize(file);
-      return normalizedFile.startsWith(normalizedPath);
+      return this.pathMatcher.doesFileMatchPath(file, targetPath);
     });
   }
 
@@ -129,9 +130,7 @@ export class GitManager {
 
     for (const commit of allCommits) {
       const affectedFiles = commit.files.filter(file => {
-        const normalizedFile = path.normalize(file);
-        const normalizedPattern = path.normalize(pathPattern);
-        return normalizedFile.startsWith(normalizedPattern);
+        return this.pathMatcher.doesFileMatchPath(file, pathPattern);
       });
 
       if (affectedFiles.length > 0) {

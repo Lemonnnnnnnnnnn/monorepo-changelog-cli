@@ -3,6 +3,7 @@ import { WorkspaceManager } from '../core/workspace';
 import { CacheManager } from '../core/cache';
 import { ConfigManager } from '../core/config';
 import { ChangelogGenerator } from '../core/changelog';
+import { PathMatcher } from '../utils/path-matcher';
 import { CommitInfo, PackageInfo, ChangelogMetadata } from '../types';
 
 export interface InitOptions {
@@ -17,6 +18,7 @@ export class InitCommand {
   private cacheManager: CacheManager;
   private configManager: ConfigManager;
   private changelogGenerator: ChangelogGenerator;
+  private pathMatcher: PathMatcher;
   private verbose: boolean = false;
 
   constructor(rootPath: string = process.cwd()) {
@@ -25,6 +27,7 @@ export class InitCommand {
     this.cacheManager = new CacheManager(rootPath);
     this.configManager = new ConfigManager(rootPath);
     this.changelogGenerator = new ChangelogGenerator(rootPath);
+    this.pathMatcher = new PathMatcher(rootPath);
   }
 
   async execute(options: InitOptions): Promise<void> {
@@ -266,14 +269,21 @@ export class InitCommand {
     const packageCommits: Record<string, string> = {};
     for (const pkg of packages) {
       const relevantCommits = commits.filter(commit => 
-        commit.files.some(file => file.startsWith(pkg.path))
+        this.pathMatcher.doesAnyFileAffectPackage(commit.files, pkg.path)
       );
+
+      if (this.verbose) {
+        console.log(`pkg ${pkg.name} 路径: ${pkg.path}`);
+        console.log(`相关提交数: ${relevantCommits.length}`);
+        if (relevantCommits.length > 0) {
+          console.log(`最新相关提交: ${relevantCommits[0].hash}`);
+        }
+      }
       
       if (relevantCommits.length > 0) {
         packageCommits[pkg.name] = relevantCommits[0].hash;
       }
     }
-
     await this.cacheManager.batchUpdatePackageCommits(packageCommits);
 
     if (this.verbose) {

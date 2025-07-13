@@ -22,6 +22,9 @@ export { VersionManager } from './core/version';
 export { InitCommand } from './commands/init';
 export { UpdateCommand } from './commands/update';
 
+// 导出工具类
+export { PathMatcher } from './utils/path-matcher';
+
 // 导出类型
 export * from './types';
 
