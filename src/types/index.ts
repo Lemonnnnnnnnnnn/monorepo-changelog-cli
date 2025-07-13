@@ -64,7 +64,6 @@ export interface ChangelogEntry {
   commits: CommitInfo[];
   breaking?: boolean;
   dependencyUpdates?: DependencyUpdate[];
-  manualEntries?: ManualEntry[];
 }
 
 export interface ChangelogMetadata {
@@ -80,14 +79,6 @@ export interface DependencyUpdate {
   oldVersion: string;
   newVersion: string;
   changeType: 'major' | 'minor' | 'patch';
-}
-
-// 新增：手动输入的日志条目
-export interface ManualEntry {
-  type: 'feat' | 'fix' | 'docs' | 'style' | 'refactor' | 'test' | 'chore';
-  message: string;
-  scope?: string;
-  breaking?: boolean;
 }
 
 // 新增：依赖更新策略

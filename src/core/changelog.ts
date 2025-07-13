@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { CommitInfo, ChangelogEntry, ChangelogMetadata, PackageInfo, DependencyUpdate, ManualEntry } from '../types';
+import { CommitInfo, ChangelogEntry, ChangelogMetadata, PackageInfo, DependencyUpdate } from '../types';
 import { CHANGELOG_FILE_NAME, CHANGELOG_METADATA_COMMENT, COMMIT_TYPE_MAPPINGS } from '../utils/constants';
 
 export class ChangelogGenerator {
@@ -47,23 +47,6 @@ export class ChangelogGenerator {
       if (entry.breaking) {
         lines.push('### ⚠️ 破坏性更改');
         lines.push('');
-      }
-
-      // 添加手动输入的条目
-      if (entry.manualEntries && entry.manualEntries.length > 0) {
-        const manualByType = this.groupManualEntriesByType(entry.manualEntries);
-        for (const [type, manualEntries] of Object.entries(manualByType)) {
-          const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
-          lines.push(`### ${typeName}`);
-          lines.push('');
-
-          for (const manualEntry of manualEntries) {
-            const scope = manualEntry.scope ? `(${manualEntry.scope})` : '';
-            const breaking = manualEntry.breaking ? ' ⚠️' : '';
-            lines.push(`- ${manualEntry.message}${scope}${breaking}`);
-          }
-          lines.push('');
-        }
       }
 
       // 按提交类型分组
@@ -166,23 +149,6 @@ export class ChangelogGenerator {
       lines.push('');
     }
 
-    // 添加手动输入的条目
-    if (entry.manualEntries && entry.manualEntries.length > 0) {
-      const manualByType = this.groupManualEntriesByType(entry.manualEntries);
-      for (const [type, manualEntries] of Object.entries(manualByType)) {
-        const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
-        lines.push(`### ${typeName}`);
-        lines.push('');
-
-        for (const manualEntry of manualEntries) {
-          const scope = manualEntry.scope ? `(${manualEntry.scope})` : '';
-          const breaking = manualEntry.breaking ? ' ⚠️' : '';
-          lines.push(`- ${manualEntry.message}${scope}${breaking}`);
-        }
-        lines.push('');
-      }
-    }
-
     // 按提交类型分组
     if (entry.commits && entry.commits.length > 0) {
       const commitsByType = this.groupCommitsByType(entry.commits);
@@ -213,23 +179,6 @@ export class ChangelogGenerator {
     }
 
     return lines;
-  }
-
-  /**
-   * 按类型分组手动条目
-   */
-  private groupManualEntriesByType(manualEntries: ManualEntry[]): Record<string, ManualEntry[]> {
-    const grouped: Record<string, ManualEntry[]> = {};
-    
-    for (const entry of manualEntries) {
-      const type = entry.type;
-      if (!grouped[type]) {
-        grouped[type] = [];
-      }
-      grouped[type].push(entry);
-    }
-    
-    return grouped;
   }
 
   /**
@@ -328,7 +277,6 @@ export class ChangelogGenerator {
     commits: CommitInfo[],
     date: Date = new Date(),
     dependencyUpdates?: DependencyUpdate[],
-    manualEntries?: ManualEntry[]
   ): ChangelogEntry {
     return {
       version,
@@ -336,7 +284,6 @@ export class ChangelogGenerator {
       commits,
       breaking: this.hasBreakingChanges(commits),
       dependencyUpdates,
-      manualEntries
     };
   }
 
@@ -348,14 +295,12 @@ export class ChangelogGenerator {
     commits: CommitInfo[],
     lastCommitHash: string,
     dependencyUpdates?: DependencyUpdate[],
-    manualEntries?: ManualEntry[]
   ): Promise<void> {
     const entry = this.createChangelogEntry(
       packageInfo.version,
       commits,
       new Date(),
       dependencyUpdates,
-      manualEntries
     );
 
     const metadata: ChangelogMetadata = {

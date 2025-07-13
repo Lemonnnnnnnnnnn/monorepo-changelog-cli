@@ -64,20 +64,6 @@ changelog-cli update --packages pkg-b
 # ✅ 已更新 pkg-c 中的依赖 pkg-b: 1.0.0 -> 1.0.1
 ```
 
-#### 手动输入日志
-```bash
-# 启用手动输入日志条目
-changelog-cli update --packages pkg-a --manual
-
-# 交互式选择：
-# ? 是否要为 pkg-a 添加手动日志条目？ Yes
-# ? 选择条目类型: ✨ feat - 新功能
-# ? 输入描述信息: 添加新的用户认证功能
-# ? 输入作用域 (可选): auth
-# ? 是否为破坏性更改？ No
-# ? 是否继续添加更多条目？ No
-```
-
 #### 预览模式
 ```bash
 # 预览将要执行的更新
@@ -213,7 +199,6 @@ changelog-cli update --packages pkg-b
 - `-p, --packages <packages...>`: 指定要更新的包名
 - `-a, --all`: 更新所有包
 - `-t, --type <type>`: 版本更新类型 (major|minor|patch)
-- `-m, --manual`: 启用手动输入日志条目
 
 ## 支持的提交类型
 

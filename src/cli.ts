@@ -31,7 +31,6 @@ program
   .option('-c, --config <path>', '配置文件路径')
   .option('-v, --verbose', '详细输出')
   .option('--dry-run', '预览模式，不实际更新文件')
-  .option('-m, --manual', '启用手动输入日志条目')
   .action(async (options) => {
     const updateCommand = new UpdateCommand();
     await updateCommand.execute(options);

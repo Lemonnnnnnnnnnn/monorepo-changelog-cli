@@ -4,7 +4,7 @@ import { CacheManager } from '../core/cache';
 import { ConfigManager } from '../core/config';
 import { ChangelogGenerator } from '../core/changelog';
 import { VersionManager } from '../core/version';
-import { CommitInfo, PackageInfo, VersionUpdateStrategy, DependencyUpdate, ManualEntry } from '../types';
+import { CommitInfo, PackageInfo, VersionUpdateStrategy, DependencyUpdate } from '../types';
 import { PathMatcher } from '../utils/path-matcher';
 import { checkbox } from '@inquirer/prompts';
 
@@ -15,7 +15,6 @@ export interface UpdateOptions {
   config?: string;
   verbose?: boolean;
   dryRun?: boolean;
-  manual?: boolean; // 是否手动输入日志
 }
 
 export class UpdateCommand {
@@ -64,9 +63,6 @@ export class UpdateCommand {
       // 6. 获取新的提交
       const newCommits = await this.getNewCommits(targetPackages, packages);
 
-      // 7. 获取手动输入的日志（如果启用）
-      const manualEntries = options.manual ? await this.getManualEntries(targetPackages) : undefined;
-
       // 8. 创建版本更新策略
       const updateStrategies = await this.createUpdateStrategies(
         packages,
@@ -77,9 +73,9 @@ export class UpdateCommand {
 
       // 10. 预览或执行更新
       if (options.dryRun) {
-        await this.previewUpdate(packages, updateStrategies, newCommits, manualEntries);
+        await this.previewUpdate(packages, updateStrategies, newCommits);
       } else {
-        await this.executeUpdate(packages, updateStrategies, newCommits, manualEntries);
+        await this.executeUpdate(packages, updateStrategies, newCommits);
       }
 
       console.log('✅ 更新完成！');
@@ -211,86 +207,6 @@ export class UpdateCommand {
     return newCommits;
   }
 
-  private async getManualEntries(targetPackages: string[]): Promise<Map<string, ManualEntry[]>> {
-    const inquirer = await import('inquirer');
-    const manualEntries = new Map<string, ManualEntry[]>();
-
-    for (const packageName of targetPackages) {
-      const { hasManualEntries } = await inquirer.default.prompt([
-        {
-          type: 'confirm',
-          name: 'hasManualEntries',
-          message: `是否要为 ${packageName} 添加手动日志条目？`,
-          default: false
-        }
-      ]);
-
-      if (hasManualEntries) {
-        const entries: ManualEntry[] = [];
-        let addMore = true;
-
-        while (addMore) {
-          const { type, message, scope, breaking } = await inquirer.default.prompt([
-            {
-              type: 'list',
-              name: 'type',
-              message: '选择条目类型:',
-              choices: [
-                { name: '✨ feat - 新功能', value: 'feat' },
-                { name: '🐛 fix - 修复', value: 'fix' },
-                { name: '📚 docs - 文档', value: 'docs' },
-                { name: '💄 style - 样式', value: 'style' },
-                { name: '♻️ refactor - 重构', value: 'refactor' },
-                { name: '✅ test - 测试', value: 'test' },
-                { name: '🔧 chore - 构建', value: 'chore' }
-              ]
-            },
-            {
-              type: 'input',
-              name: 'message',
-              message: '输入描述信息:',
-              validate: (input: string) => input.trim() !== '' || '请输入描述信息'
-            },
-            {
-              type: 'input',
-              name: 'scope',
-              message: '输入作用域 (可选):',
-              default: ''
-            },
-            {
-              type: 'confirm',
-              name: 'breaking',
-              message: '是否为破坏性更改？',
-              default: false
-            }
-          ]);
-
-          entries.push({
-            type,
-            message,
-            scope: scope || undefined,
-            breaking
-          });
-
-          const { continueAdding } = await inquirer.default.prompt([
-            {
-              type: 'confirm',
-              name: 'continueAdding',
-              message: '是否继续添加更多条目？',
-              default: false
-            }
-          ]);
-
-          addMore = continueAdding;
-        }
-
-        manualEntries.set(packageName, entries);
-      }
-    }
-
-    return manualEntries;
-  }
-
   private async createUpdateStrategies(
     packages: PackageInfo[],
     targetPackages: string[],
@@ -346,7 +262,6 @@ export class UpdateCommand {
     packages: PackageInfo[],
     strategies: VersionUpdateStrategy[],
     newCommits: Map<string, CommitInfo[]>,
-    manualEntries?: Map<string, ManualEntry[]>
   ): Promise<void> {
     console.log('\n📋 预览模式 - 将要执行的更新:');
 
@@ -359,9 +274,8 @@ export class UpdateCommand {
 
     console.log('\nChangelog 更新:');
     newCommits.forEach((commits, packageName) => {
-      const manualCount = manualEntries?.get(packageName)?.length || 0;
-      if (commits.length > 0 || manualCount > 0) {
-        console.log(`  📄 ${packageName}/CHANGELOG.md (${commits.length} 个提交${manualCount > 0 ? `, ${manualCount} 个手动条目` : ''})`);
+      if (commits.length > 0) {
+        console.log(`  📄 ${packageName}/CHANGELOG.md (${commits.length} 个提交)`);
       }
     });
   }
@@ -370,7 +284,6 @@ export class UpdateCommand {
     packages: PackageInfo[],
     strategies: VersionUpdateStrategy[],
     newCommits: Map<string, CommitInfo[]>,
-    manualEntries?: Map<string, ManualEntry[]>
   ): Promise<void> {
     if (this.verbose) {
       console.log('🔄 执行更新...');
@@ -383,7 +296,7 @@ export class UpdateCommand {
     await this.versionManager.batchUpdateVersions(packages, strategies);
 
     // 3. 更新 changelog
-    await this.updateChangelogFiles(packages, strategies, newCommits, versionChanges, manualEntries);
+    await this.updateChangelogFiles(packages, strategies, newCommits, versionChanges);
 
     // 4. 更新缓存
     await this.updateCache(packages, newCommits);
@@ -423,7 +336,6 @@ export class UpdateCommand {
     strategies: VersionUpdateStrategy[],
     newCommits: Map<string, CommitInfo[]>,
     versionChanges: Map<string, { old: string; new: string; changeType: 'major' | 'minor' | 'patch' }>,
-    manualEntries?: Map<string, ManualEntry[]>
   ): Promise<void> {
     if (this.verbose) {
       console.log('📄 更新 changelog 文件...');
@@ -442,7 +354,6 @@ export class UpdateCommand {
       }
 
       const commits = newCommits.get(strategy.package) || [];
-      const manualEntriesForPackage = manualEntries?.get(strategy.package);
       const versionChange = versionChanges.get(strategy.package);
 
       // 获取该包的依赖更新信息
@@ -456,7 +367,7 @@ export class UpdateCommand {
         }));
 
       // 如果有提交、手动条目或依赖更新，就生成 changelog
-      if (commits.length > 0 || manualEntriesForPackage || dependencyUpdates.length > 0) {
+      if (commits.length > 0 || dependencyUpdates.length > 0) {
         const latestCommit = commits.length > 0 ? commits[0] : { hash: '' };
         const newVersion = versionChange?.new || pkg.version;
 
@@ -464,8 +375,7 @@ export class UpdateCommand {
           { ...pkg, version: newVersion },
           commits,
           latestCommit.hash,
-          dependencyUpdates.length > 0 ? dependencyUpdates : undefined,
-          manualEntriesForPackage
+          dependencyUpdates.length > 0 ? dependencyUpdates : undefined
         );
 
         if (this.verbose) {
