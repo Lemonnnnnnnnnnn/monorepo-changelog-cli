@@ -279,51 +279,7 @@ export class VersionManager {
 
     return strategies;
   }
-
-  /**
-   * 检查版本冲突
-   */
-  checkVersionConflicts(
-    packages: PackageInfo[],
-    strategies: VersionUpdateStrategy[]
-  ): string[] {
-    const conflicts: string[] = [];
-    const packageMap = new Map<string, PackageInfo>();
-    packages.forEach(pkg => packageMap.set(pkg.name, pkg));
-
-    for (const strategy of strategies) {
-      const pkg = packageMap.get(strategy.package);
-      if (!pkg) {
-        continue;
-      }
-
-      try {
-        const newVersion = this.calculateNewVersion(pkg.version, strategy.type);
-        
-        // 检查是否有其他包依赖于这个包的特定版本
-        const dependents = this.getDependentPackages(strategy.package);
-        for (const dependentName of dependents) {
-          const dependent = packageMap.get(dependentName);
-          if (dependent) {
-            const requiredVersion = dependent.dependencies[strategy.package] || 
-                                   dependent.devDependencies[strategy.package] || 
-                                   dependent.peerDependencies[strategy.package];
-            
-            if (requiredVersion && !requiredVersion.startsWith('workspace:') && !semver.satisfies(newVersion, requiredVersion)) {
-              conflicts.push(
-                `${dependentName} 需要 ${strategy.package}@${requiredVersion}，但计划更新到 ${newVersion}`
-              );
-            }
-          }
-        }
-      } catch (error) {
-        conflicts.push(`${strategy.package}: ${error}`);
-      }
-    }
-
-    return conflicts;
-  }
-
+  
   /**
    * 获取包的当前版本
    */

@@ -74,9 +74,6 @@ export class UpdateCommand {
         options.type
       );
 
-      // 9. 检查版本冲突
-      await this.checkVersionConflicts(packages, updateStrategies);
-
       // 10. 预览或执行更新
       if (options.dryRun) {
         await this.previewUpdate(packages, updateStrategies, newCommits, manualEntries);
@@ -357,29 +354,6 @@ export class UpdateCommand {
     }
 
     return strategies;
-  }
-
-  private async checkVersionConflicts(
-    packages: PackageInfo[],
-    strategies: VersionUpdateStrategy[]
-  ): Promise<void> {
-    if (this.verbose) {
-      console.log('🔍 检查版本冲突...');
-    }
-
-    const conflicts = this.versionManager.checkVersionConflicts(packages, strategies);
-    
-    if (conflicts.length > 0) {
-      console.error('❌ 发现版本冲突:');
-      conflicts.forEach(conflict => {
-        console.error(`  - ${conflict}`);
-      });
-      throw new Error('版本冲突，请解决后重试');
-    }
-
-    if (this.verbose) {
-      console.log('✅ 无版本冲突');
-    }
   }
 
   private async previewUpdate(
