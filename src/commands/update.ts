@@ -6,6 +6,7 @@ import { ChangelogGenerator } from '../core/changelog';
 import { VersionManager } from '../core/version';
 import { CommitInfo, PackageInfo, VersionUpdateStrategy, DependencyUpdate, ManualEntry } from '../types';
 import { PathMatcher } from '../utils/path-matcher';
+import { checkbox } from '@inquirer/prompts';
 
 export interface UpdateOptions {
   packages?: string[];
@@ -40,7 +41,7 @@ export class UpdateCommand {
   async execute(options: UpdateOptions): Promise<void> {
     try {
       this.verbose = options.verbose || false;
-      
+
       if (this.verbose) {
         console.log('🚀 开始更新 changelog 和版本...');
       }
@@ -68,8 +69,8 @@ export class UpdateCommand {
 
       // 8. 创建版本更新策略
       const updateStrategies = await this.createUpdateStrategies(
-        packages, 
-        targetPackages, 
+        packages,
+        targetPackages,
         newCommits,
         options.type
       );
@@ -82,7 +83,7 @@ export class UpdateCommand {
       }
 
       console.log('✅ 更新完成！');
-      
+
     } catch (error) {
       console.error('❌ 更新失败:', error);
       process.exit(1);
@@ -119,7 +120,7 @@ export class UpdateCommand {
     }
 
     const config = await this.configManager.readConfig();
-    
+
     if (this.verbose) {
       console.log('✅ 配置读取完成');
     }
@@ -131,7 +132,7 @@ export class UpdateCommand {
     }
 
     const packages = await this.workspaceManager.getAllPackages();
-    
+
     if (this.verbose) {
       console.log(`✅ 发现 ${packages.length} 个包`);
     }
@@ -171,27 +172,12 @@ export class UpdateCommand {
   }
 
   private async selectPackagesInteractively(packages: PackageInfo[]): Promise<string[]> {
-    const inquirer = await import('inquirer');
-    
-    const { selectedPackages } = await inquirer.default.prompt([
-      {
-        type: 'checkbox',
-        name: 'selectedPackages',
-        message: '选择要更新的包:',
-        choices: packages.map(pkg => ({
-          name: `${pkg.name}@${pkg.version}`,
-          value: pkg.name
-        })),
-        validate: (input: string[]) => {
-          if (input.length === 0) {
-            return '请至少选择一个包';
-          }
-          return true;
-        }
-      }
-    ]);
+    const answer = await checkbox({
+      message: '选择要更新的包:',
+      choices: packages.map(pkg => ({ name: pkg.name, value: pkg.name }))
+    });
 
-    return selectedPackages;
+    return answer;
   }
 
   private async getNewCommits(targetPackages: string[], packages: PackageInfo[]): Promise<Map<string, CommitInfo[]>> {
@@ -209,14 +195,14 @@ export class UpdateCommand {
 
       const lastCommit = await this.cacheManager.getPackageLastCommit(packageName);
       const allCommits = await this.gitManager.getAllCommits(lastCommit || undefined);
-      
+
       // 过滤出影响当前包的提交
-      const packageCommits = allCommits.filter((commit: CommitInfo) => 
+      const packageCommits = allCommits.filter((commit: CommitInfo) =>
         this.pathMatcher.doesAnyFileAffectPackage(commit.files, pkg.path)
       );
-      
+
       newCommits.set(packageName, packageCommits);
-      
+
       if (this.verbose) {
         console.log(`  - ${packageName}: ${packageCommits.length} 个新提交`);
       }
@@ -363,9 +349,9 @@ export class UpdateCommand {
     manualEntries?: Map<string, ManualEntry[]>
   ): Promise<void> {
     console.log('\n📋 预览模式 - 将要执行的更新:');
-    
+
     const preview = this.versionManager.previewVersionUpdate(packages, strategies);
-    
+
     console.log('\n版本更新:');
     preview.forEach(item => {
       console.log(`  📦 ${item.package}: ${item.currentVersion} -> ${item.newVersion} (${item.reason})`);
@@ -498,7 +484,7 @@ export class UpdateCommand {
     }
 
     const packageCommits: Record<string, string> = {};
-    
+
     newCommits.forEach((commits, packageName) => {
       if (commits.length > 0) {
         packageCommits[packageName] = commits[0].hash;
