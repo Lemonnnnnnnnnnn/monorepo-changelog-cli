@@ -58,6 +58,24 @@ program
     await statusCommand.execute(options);
   });
 
+program
+  .command('publish')
+  .description('发布包到 npm registry')
+  .option('-p, --packages <packages...>', '指定要发布的包名')
+  .option('-a, --all', '发布所有包')
+  .option('-r, --registry <registry>', '指定 npm registry')
+  .option('-t, --tag <tag>', '指定发布标签')
+  .option('--access <access>', '指定包访问权限 (public|restricted)')
+  .option('--force', '强制发布，即使版本已存在')
+  .option('--skip-version-check', '跳过版本检查')
+  .option('--dry-run', '预览模式，不实际发布')
+  .option('-v, --verbose', '详细输出')
+  .action(async (options) => {
+    const { PublishCommand } = await import('./commands/publish');
+    const publishCommand = new PublishCommand();
+    await publishCommand.execute(options);
+  });
+
 // 处理未知命令
 program.on('command:*', () => {
   console.error('无效的命令: %s\n请参考 --help 查看可用命令', program.args.join(' '));
