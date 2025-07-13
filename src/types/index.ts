@@ -63,6 +63,8 @@ export interface ChangelogEntry {
   date: Date;
   commits: CommitInfo[];
   breaking?: boolean;
+  dependencyUpdates?: DependencyUpdate[];
+  manualEntries?: ManualEntry[];
 }
 
 export interface ChangelogMetadata {
@@ -70,4 +72,29 @@ export interface ChangelogMetadata {
   lastUpdateTime: Date;
   packageName: string;
   packagePath: string;
+}
+
+// 新增：依赖更新信息
+export interface DependencyUpdate {
+  packageName: string;
+  oldVersion: string;
+  newVersion: string;
+  changeType: 'major' | 'minor' | 'patch';
+}
+
+// 新增：手动输入的日志条目
+export interface ManualEntry {
+  type: 'feat' | 'fix' | 'docs' | 'style' | 'refactor' | 'test' | 'chore';
+  message: string;
+  scope?: string;
+  breaking?: boolean;
+}
+
+// 新增：依赖更新策略
+export interface DependencyUpdateStrategy {
+  packageName: string;
+  dependencyName: string;
+  oldVersion: string;
+  newVersion: string;
+  isDirect: boolean; // 是否是直接依赖
 } 

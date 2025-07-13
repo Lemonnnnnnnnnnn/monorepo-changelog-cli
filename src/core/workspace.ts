@@ -3,6 +3,7 @@ import { join, resolve, relative, dirname } from 'path';
 import { parse as parseYaml } from 'yaml';
 import { glob } from 'glob';
 import { PackageInfo, DependencyGraph } from '../types';
+import { isSpecialWorkspaceVersion } from '../utils/workspaceUtils';
 
 export class WorkspaceManager {
   private rootPath: string;
@@ -137,28 +138,35 @@ export class WorkspaceManager {
       const dependencies: string[] = [];
       
       // 检查 dependencies
-      for (const depName of Object.keys(pkg.dependencies)) {
-        if (packageMap.has(depName)) {
+      for (const [depName, depVersion] of Object.entries(pkg.dependencies)) {
+        if (packageMap.has(depName) || this.isWorkspaceDependency(depVersion)) {
           dependencies.push(depName);
         }
       }
 
       // 检查 devDependencies
-      for (const depName of Object.keys(pkg.devDependencies)) {
-        if (packageMap.has(depName)) {
+      for (const [depName, depVersion] of Object.entries(pkg.devDependencies)) {
+        if (packageMap.has(depName) || this.isWorkspaceDependency(depVersion)) {
           dependencies.push(depName);
         }
       }
 
       // 检查 peerDependencies
-      for (const depName of Object.keys(pkg.peerDependencies)) {
-        if (packageMap.has(depName)) {
+      for (const [depName, depVersion] of Object.entries(pkg.peerDependencies)) {
+        if (packageMap.has(depName) || this.isWorkspaceDependency(depVersion)) {
           dependencies.push(depName);
         }
       }
 
       this.dependencyGraph[pkg.name] = dependencies;
     }
+  }
+
+  /**
+   * 检查是否是 workspace 依赖
+   */
+  private isWorkspaceDependency(version: string): boolean {
+    return version.startsWith('workspace:');
   }
 
   /**
@@ -189,34 +197,34 @@ export class WorkspaceManager {
    * 检查包是否存在
    */
   async hasPackage(packageName: string): Promise<boolean> {
-    const packages = await this.getAllPackages();
-    return packages.some(pkg => pkg.name === packageName);
+    await this.getAllPackages(); // 确保缓存已加载
+    return this.packagesCache.has(packageName);
   }
 
   /**
-   * 通过包名获取包信息
+   * 根据包名获取包信息
    */
   async getPackageByName(packageName: string): Promise<PackageInfo | null> {
-    const packages = await this.getAllPackages();
-    return packages.find(pkg => pkg.name === packageName) || null;
+    await this.getAllPackages(); // 确保缓存已加载
+    return this.packagesCache.get(packageName) || null;
   }
 
   /**
-   * 获取根目录的 package.json 信息
+   * 获取根包信息
    */
   async getRootPackageInfo(): Promise<PackageInfo | null> {
     return await this.getPackageInfo(this.rootPath);
   }
 
   /**
-   * 获取包的相对路径
+   * 获取相对路径
    */
   getRelativePath(packagePath: string): string {
     return relative(this.rootPath, packagePath);
   }
 
   /**
-   * 更新包的版本号
+   * 更新包版本
    */
   async updatePackageVersion(packageName: string, newVersion: string): Promise<void> {
     const packageInfo = await this.getPackageByName(packageName);
@@ -235,6 +243,96 @@ export class WorkspaceManager {
     
     // 更新缓存
     packageInfo.version = newVersion;
+    this.packagesCache.set(packageName, packageInfo);
+  }
+
+  /**
+   * 更新包的依赖版本
+   */
+  async updatePackageDependency(
+    packageName: string,
+    dependencyName: string,
+    newVersion: string
+  ): Promise<void> {
+    const packageInfo = await this.getPackageByName(packageName);
+    if (!packageInfo) {
+      throw new Error(`包 ${packageName} 不存在`);
+    }
+
+    const packageJsonPath = join(packageInfo.path, 'package.json');
+    const content = readFileSync(packageJsonPath, 'utf-8');
+    const packageJson = JSON.parse(content);
+    
+    // 更新各种依赖类型
+    if (packageJson.dependencies && packageJson.dependencies[dependencyName]) {
+      const currentVersion = packageJson.dependencies[dependencyName];
+      // 如果是 workspace:* 或 workspace:^ 这类特殊版本号，不进行更新
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageJson.dependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageJson.dependencies[dependencyName] = newVersion;
+      }
+    }
+    
+    if (packageJson.devDependencies && packageJson.devDependencies[dependencyName]) {
+      const currentVersion = packageJson.devDependencies[dependencyName];
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageJson.devDependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageJson.devDependencies[dependencyName] = newVersion;
+      }
+    }
+    
+    if (packageJson.peerDependencies && packageJson.peerDependencies[dependencyName]) {
+      const currentVersion = packageJson.peerDependencies[dependencyName];
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageJson.peerDependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageJson.peerDependencies[dependencyName] = newVersion;
+      }
+    }
+    
+    const fs = await import('fs/promises');
+    await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+    
+    // 更新缓存
+    if (packageInfo.dependencies[dependencyName]) {
+      const currentVersion = packageInfo.dependencies[dependencyName];
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新缓存
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageInfo.dependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageInfo.dependencies[dependencyName] = newVersion;
+      }
+    }
+    if (packageInfo.devDependencies[dependencyName]) {
+      const currentVersion = packageInfo.devDependencies[dependencyName];
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新缓存
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageInfo.devDependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageInfo.devDependencies[dependencyName] = newVersion;
+      }
+    }
+    if (packageInfo.peerDependencies[dependencyName]) {
+      const currentVersion = packageInfo.peerDependencies[dependencyName];
+      if (this.isWorkspaceDependency(currentVersion) && isSpecialWorkspaceVersion(currentVersion)) {
+        // 保持原样，不更新缓存
+      } else if (this.isWorkspaceDependency(currentVersion)) {
+        packageInfo.peerDependencies[dependencyName] = `workspace:${newVersion}`;
+      } else {
+        packageInfo.peerDependencies[dependencyName] = newVersion;
+      }
+    }
+    
     this.packagesCache.set(packageName, packageInfo);
   }
 

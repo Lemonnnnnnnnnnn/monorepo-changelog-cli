@@ -1,10 +1,10 @@
 {
-  "name": "pkg-a",
+  "name": "pkg-c",
   "version": "1.0.1",
-  "description": "Package A",
+  "description": "Package C",
   "main": "index.js",
   "dependencies": {
-    "pkg-b": "1.0.1"
+    "pkg-b": "workspace:*"
   },
   "devDependencies": {},
   "peerDependencies": {}

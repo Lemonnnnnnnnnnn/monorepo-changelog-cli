@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { CommitInfo, ChangelogEntry, ChangelogMetadata, PackageInfo } from '../types';
+import { CommitInfo, ChangelogEntry, ChangelogMetadata, PackageInfo, DependencyUpdate, ManualEntry } from '../types';
 import { CHANGELOG_FILE_NAME, CHANGELOG_METADATA_COMMENT, COMMIT_TYPE_MAPPINGS } from '../utils/constants';
 
 export class ChangelogGenerator {
@@ -49,18 +49,48 @@ export class ChangelogGenerator {
         lines.push('');
       }
 
-      // 按提交类型分组
-      const commitsByType = this.groupCommitsByType(entry.commits);
+      // 添加手动输入的条目
+      if (entry.manualEntries && entry.manualEntries.length > 0) {
+        const manualByType = this.groupManualEntriesByType(entry.manualEntries);
+        for (const [type, manualEntries] of Object.entries(manualByType)) {
+          const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
+          lines.push(`### ${typeName}`);
+          lines.push('');
 
-      for (const [type, commits] of Object.entries(commitsByType)) {
-        const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
-        lines.push(`### ${typeName}`);
+          for (const manualEntry of manualEntries) {
+            const scope = manualEntry.scope ? `(${manualEntry.scope})` : '';
+            const breaking = manualEntry.breaking ? ' ⚠️' : '';
+            lines.push(`- ${manualEntry.message}${scope}${breaking}`);
+          }
+          lines.push('');
+        }
+      }
+
+      // 按提交类型分组
+      if (entry.commits && entry.commits.length > 0) {
+        const commitsByType = this.groupCommitsByType(entry.commits);
+        for (const [type, commits] of Object.entries(commitsByType)) {
+          const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
+          lines.push(`### ${typeName}`);
+          lines.push('');
+
+          for (const commit of commits) {
+            const shortHash = commit.hash.substring(0, 7);
+            const message = this.formatCommitMessage(commit.message);
+            lines.push(`- ${message} (${shortHash})`);
+          }
+          lines.push('');
+        }
+      }
+
+      // 添加依赖更新信息
+      if (entry.dependencyUpdates && entry.dependencyUpdates.length > 0) {
+        lines.push('### 📦 依赖更新');
         lines.push('');
 
-        for (const commit of commits) {
-          const shortHash = commit.hash.substring(0, 7);
-          const message = this.formatCommitMessage(commit.message);
-          lines.push(`- ${message} (${shortHash})`);
+        for (const depUpdate of entry.dependencyUpdates) {
+          const changeIcon = this.getChangeIcon(depUpdate.changeType);
+          lines.push(`- ${changeIcon} 更新 ${depUpdate.packageName}: ${depUpdate.oldVersion} → ${depUpdate.newVersion}`);
         }
         lines.push('');
       }
@@ -100,37 +130,26 @@ export class ChangelogGenerator {
     metadata: ChangelogMetadata
   ): string {
     const lines = existingContent.split('\n');
-    const newEntryLines = this.generateEntryLines(newEntry);
-    
-    // 更新元数据
-    const metadataRegex = new RegExp(`${CHANGELOG_METADATA_COMMENT}\\s*(.+?)\\s*-->`, 's');
-    const metadataMatch = existingContent.match(metadataRegex);
-    
-    if (metadataMatch) {
-      const newMetadataJson = JSON.stringify(metadata, null, 2);
-      const updatedContent = existingContent.replace(
-        metadataRegex,
-        `${CHANGELOG_METADATA_COMMENT}\n${newMetadataJson}\n-->`
-      );
-      
-      // 找到第一个版本标题的位置
-      const versionHeaderIndex = lines.findIndex(line => line.startsWith('## ['));
-      
-      if (versionHeaderIndex !== -1) {
-        // 在第一个版本之前插入新条目
-        lines.splice(versionHeaderIndex, 0, ...newEntryLines, '');
-      } else {
-        // 如果没有找到版本标题，在文件末尾添加
-        lines.push('', ...newEntryLines);
+    const entryLines = this.generateEntryLines(newEntry);
+
+    // 找到插入位置（第一个版本条目之前）
+    let insertIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('## [')) {
+        insertIndex = i;
+        break;
       }
-      
-      return updatedContent.replace(
-        existingContent.substring(existingContent.indexOf('\n## [')),
-        '\n' + lines.slice(lines.findIndex(line => line.startsWith('## ['))).join('\n')
-      );
     }
-    
-    return existingContent + '\n' + newEntryLines.join('\n');
+
+    if (insertIndex === -1) {
+      // 没有找到现有版本，添加到文件末尾
+      return existingContent + '\n' + entryLines.join('\n');
+    } else {
+      // 插入到现有版本之前
+      const beforeLines = lines.slice(0, insertIndex);
+      const afterLines = lines.slice(insertIndex);
+      return [...beforeLines, ...entryLines, '', ...afterLines].join('\n');
+    }
   }
 
   /**
@@ -147,17 +166,48 @@ export class ChangelogGenerator {
       lines.push('');
     }
 
-    const commitsByType = this.groupCommitsByType(entry.commits);
+    // 添加手动输入的条目
+    if (entry.manualEntries && entry.manualEntries.length > 0) {
+      const manualByType = this.groupManualEntriesByType(entry.manualEntries);
+      for (const [type, manualEntries] of Object.entries(manualByType)) {
+        const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
+        lines.push(`### ${typeName}`);
+        lines.push('');
 
-    for (const [type, commits] of Object.entries(commitsByType)) {
-      const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
-      lines.push(`### ${typeName}`);
+        for (const manualEntry of manualEntries) {
+          const scope = manualEntry.scope ? `(${manualEntry.scope})` : '';
+          const breaking = manualEntry.breaking ? ' ⚠️' : '';
+          lines.push(`- ${manualEntry.message}${scope}${breaking}`);
+        }
+        lines.push('');
+      }
+    }
+
+    // 按提交类型分组
+    if (entry.commits && entry.commits.length > 0) {
+      const commitsByType = this.groupCommitsByType(entry.commits);
+      for (const [type, commits] of Object.entries(commitsByType)) {
+        const typeName = COMMIT_TYPE_MAPPINGS[type] || `🔧 ${type}`;
+        lines.push(`### ${typeName}`);
+        lines.push('');
+
+        for (const commit of commits) {
+          const shortHash = commit.hash.substring(0, 7);
+          const message = this.formatCommitMessage(commit.message);
+          lines.push(`- ${message} (${shortHash})`);
+        }
+        lines.push('');
+      }
+    }
+
+    // 添加依赖更新信息
+    if (entry.dependencyUpdates && entry.dependencyUpdates.length > 0) {
+      lines.push('### 📦 依赖更新');
       lines.push('');
 
-      for (const commit of commits) {
-        const shortHash = commit.hash.substring(0, 7);
-        const message = this.formatCommitMessage(commit.message);
-        lines.push(`- ${message} ([${shortHash}](../../commit/${commit.hash}))`);
+      for (const depUpdate of entry.dependencyUpdates) {
+        const changeIcon = this.getChangeIcon(depUpdate.changeType);
+        lines.push(`- ${changeIcon} 更新 ${depUpdate.packageName}: ${depUpdate.oldVersion} → ${depUpdate.newVersion}`);
       }
       lines.push('');
     }
@@ -166,32 +216,72 @@ export class ChangelogGenerator {
   }
 
   /**
+   * 按类型分组手动条目
+   */
+  private groupManualEntriesByType(manualEntries: ManualEntry[]): Record<string, ManualEntry[]> {
+    const grouped: Record<string, ManualEntry[]> = {};
+    
+    for (const entry of manualEntries) {
+      const type = entry.type;
+      if (!grouped[type]) {
+        grouped[type] = [];
+      }
+      grouped[type].push(entry);
+    }
+    
+    return grouped;
+  }
+
+  /**
    * 按提交类型分组
    */
   private groupCommitsByType(commits: CommitInfo[]): Record<string, CommitInfo[]> {
-    const groups: Record<string, CommitInfo[]> = {};
-
+    const grouped: Record<string, CommitInfo[]> = {};
+    
     for (const commit of commits) {
-      const type = commit.type || 'other';
-      if (!groups[type]) {
-        groups[type] = [];
+      const type = this.extractCommitType(commit.message);
+      if (!grouped[type]) {
+        grouped[type] = [];
       }
-      groups[type].push(commit);
+      grouped[type].push(commit);
     }
+    
+    return grouped;
+  }
 
-    return groups;
+  /**
+   * 提取提交类型
+   */
+  private extractCommitType(message: string): string {
+    const match = message.match(/^(\w+)(\(.+\))?:/);
+    return match ? match[1] : 'other';
   }
 
   /**
    * 格式化提交消息
    */
   private formatCommitMessage(message: string): string {
-    // 移除常规提交前缀
-    const conventionalPattern = /^(\w+)(\(.+\))?:\s*/;
-    const cleanMessage = message.replace(conventionalPattern, '');
+    // 移除类型前缀
+    const cleanMessage = message.replace(/^(\w+)(\(.+\))?:\s*/, '');
     
     // 首字母大写
     return cleanMessage.charAt(0).toUpperCase() + cleanMessage.slice(1);
+  }
+
+  /**
+   * 获取变更类型图标
+   */
+  private getChangeIcon(changeType: 'major' | 'minor' | 'patch'): string {
+    switch (changeType) {
+      case 'major':
+        return '🚨';
+      case 'minor':
+        return '✨';
+      case 'patch':
+        return '🐛';
+      default:
+        return '🔧';
+    }
   }
 
   /**
@@ -206,11 +296,6 @@ export class ChangelogGenerator {
    */
   private async getPackageInfo(packagePath: string): Promise<PackageInfo> {
     const packageJsonPath = join(packagePath, 'package.json');
-    
-    if (!existsSync(packageJsonPath)) {
-      throw new Error(`找不到 package.json 文件: ${packageJsonPath}`);
-    }
-
     const content = readFileSync(packageJsonPath, 'utf-8');
     const packageJson = JSON.parse(content);
     
@@ -230,7 +315,8 @@ export class ChangelogGenerator {
   private hasBreakingChanges(commits: CommitInfo[]): boolean {
     return commits.some(commit => 
       commit.message.includes('BREAKING CHANGE') || 
-      commit.message.includes('!:')
+      commit.message.includes('!:') ||
+      commit.message.match(/^(\w+)(\(.+\))?!:/)
     );
   }
 
@@ -240,30 +326,38 @@ export class ChangelogGenerator {
   createChangelogEntry(
     version: string,
     commits: CommitInfo[],
-    date: Date = new Date()
+    date: Date = new Date(),
+    dependencyUpdates?: DependencyUpdate[],
+    manualEntries?: ManualEntry[]
   ): ChangelogEntry {
     return {
       version,
       date,
       commits,
-      breaking: this.hasBreakingChanges(commits)
+      breaking: this.hasBreakingChanges(commits),
+      dependencyUpdates,
+      manualEntries
     };
   }
 
   /**
-   * 生成包的 changelog 文件
+   * 生成包的 changelog
    */
   async generatePackageChangelog(
     packageInfo: PackageInfo,
     commits: CommitInfo[],
-    lastCommitHash: string
+    lastCommitHash: string,
+    dependencyUpdates?: DependencyUpdate[],
+    manualEntries?: ManualEntry[]
   ): Promise<void> {
-    const changelogPath = join(packageInfo.path, CHANGELOG_FILE_NAME);
-    
-    // 创建 changelog 条目
-    const entry = this.createChangelogEntry(packageInfo.version, commits);
-    
-    // 创建元数据
+    const entry = this.createChangelogEntry(
+      packageInfo.version,
+      commits,
+      new Date(),
+      dependencyUpdates,
+      manualEntries
+    );
+
     const metadata: ChangelogMetadata = {
       lastCommitHash,
       lastUpdateTime: new Date(),
@@ -271,11 +365,6 @@ export class ChangelogGenerator {
       packagePath: packageInfo.path
     };
 
-    if (existsSync(changelogPath)) {
-      await this.updateChangelog(packageInfo.path, entry, metadata);
-    } else {
-      const content = await this.generateChangelog(packageInfo, [entry], metadata);
-      writeFileSync(changelogPath, content);
-    }
+    await this.updateChangelog(packageInfo.path, entry, metadata);
   }
 } 

@@ -1,6 +1,7 @@
 import semver from 'semver';
-import { PackageInfo, VersionUpdateStrategy, DependencyGraph } from '../types';
+import { PackageInfo, VersionUpdateStrategy, DependencyGraph, DependencyUpdateStrategy } from '../types';
 import { VERSION_BUMP_TYPES } from '../utils/constants';
+import { isSpecialWorkspaceVersion } from '../utils/workspaceUtils';
 
 export class VersionManager {
   private dependencyGraph: DependencyGraph;
@@ -100,18 +101,16 @@ export class VersionManager {
    * 获取需要更新的包列表（包括依赖者）
    */
   getPackagesToUpdate(packageNames: string[]): string[] {
-    const allPackages = new Set<string>();
-    const visited = new Set<string>();
-
+    const packagesToUpdate = new Set<string>();
+    
     const addPackageAndDependents = (packageName: string) => {
-      if (visited.has(packageName)) {
+      if (packagesToUpdate.has(packageName)) {
         return;
       }
       
-      visited.add(packageName);
-      allPackages.add(packageName);
+      packagesToUpdate.add(packageName);
       
-      // 添加依赖者
+      // 递归添加依赖者
       const dependents = this.getDependentPackages(packageName);
       for (const dependent of dependents) {
         addPackageAndDependents(dependent);
@@ -122,7 +121,7 @@ export class VersionManager {
       addPackageAndDependents(packageName);
     }
 
-    return Array.from(allPackages);
+    return Array.from(packagesToUpdate);
   }
 
   /**
@@ -136,23 +135,22 @@ export class VersionManager {
     const packageMap = new Map<string, PackageInfo>();
     packages.forEach(pkg => packageMap.set(pkg.name, pkg));
 
-    const packagesToUpdate = this.getPackagesToUpdate(targetPackages);
     const strategies: VersionUpdateStrategy[] = [];
+    const allPackagesToUpdate = this.getPackagesToUpdate(targetPackages);
 
-    for (const packageName of packagesToUpdate) {
+    for (const packageName of allPackagesToUpdate) {
       const pkg = packageMap.get(packageName);
       if (!pkg) {
         continue;
       }
 
       const isDirectTarget = targetPackages.includes(packageName);
-      const strategy: VersionUpdateStrategy = {
+      
+      strategies.push({
         type: bumpType || 'patch',
         package: packageName,
         reason: isDirectTarget ? '直接更新' : '依赖更新'
-      };
-
-      strategies.push(strategy);
+      });
     }
 
     return strategies;
@@ -165,24 +163,13 @@ export class VersionManager {
     packageInfo: PackageInfo,
     newVersion: string
   ): Promise<void> {
-    // 验证新版本号
-    if (!this.validateVersion(newVersion)) {
-      throw new Error(`无效的版本号: ${newVersion}`);
-    }
-
-    // 检查版本是否向后兼容
-    if (this.compareVersions(newVersion, packageInfo.version) <= 0) {
-      throw new Error(`新版本号 ${newVersion} 不能小于或等于当前版本 ${packageInfo.version}`);
-    }
-
-    // 更新 package.json 文件
-    const packageJsonPath = require('path').join(packageInfo.path, 'package.json');
-    const fs = require('fs');
+    const workspaceManager = await import('./workspace').then(m => m.WorkspaceManager);
+    const wsManager = new workspaceManager();
     
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-    packageJson.version = newVersion;
+    await wsManager.updatePackageVersion(packageInfo.name, newVersion);
     
-    fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+    // 更新本地 PackageInfo
+    packageInfo.version = newVersion;
   }
 
   /**
@@ -195,6 +182,8 @@ export class VersionManager {
     const packageMap = new Map<string, PackageInfo>();
     packages.forEach(pkg => packageMap.set(pkg.name, pkg));
 
+    // 计算所有版本变更
+    const versionChanges = new Map<string, { old: string; new: string }>();
     for (const strategy of strategies) {
       const pkg = packageMap.get(strategy.package);
       if (!pkg) {
@@ -203,10 +192,92 @@ export class VersionManager {
       }
 
       const newVersion = this.calculateNewVersion(pkg.version, strategy.type);
-      await this.executeVersionUpdate(pkg, newVersion);
-      
-      console.log(`✅ 已更新 ${strategy.package}: ${pkg.version} -> ${newVersion} (${strategy.reason})`);
+      versionChanges.set(strategy.package, { old: pkg.version, new: newVersion });
     }
+
+    // 更新版本
+    for (const strategy of strategies) {
+      const pkg = packageMap.get(strategy.package);
+      if (!pkg) {
+        continue;
+      }
+
+      const versionChange = versionChanges.get(strategy.package);
+      if (!versionChange) {
+        continue;
+      }
+
+      await this.executeVersionUpdate(pkg, versionChange.new);
+      
+      console.log(`✅ 已更新 ${strategy.package}: ${versionChange.old} -> ${versionChange.new} (${strategy.reason})`);
+    }
+
+    // 更新依赖关系
+    await this.updateDependencyVersions(packages, versionChanges);
+  }
+
+  /**
+   * 更新依赖版本
+   */
+  async updateDependencyVersions(
+    packages: PackageInfo[],
+    versionChanges: Map<string, { old: string; new: string }>
+  ): Promise<void> {
+    const workspaceManager = await import('./workspace').then(m => m.WorkspaceManager);
+    const wsManager = new workspaceManager();
+
+    for (const pkg of packages) {
+      for (const [changedPackage, versionChange] of versionChanges) {
+        // 检查是否依赖于已更新的包
+        const dependencyVersion = pkg.dependencies[changedPackage] || 
+                                 pkg.devDependencies[changedPackage] || 
+                                 pkg.peerDependencies[changedPackage];
+        
+        if (dependencyVersion) {
+          // 检查是否是特殊的 workspace 版本号（如 workspace:*、workspace:^）
+          if (isSpecialWorkspaceVersion(dependencyVersion)) {
+            console.log(`⏭️  跳过更新 ${pkg.name} 中的依赖 ${changedPackage}: ${dependencyVersion} (特殊版本号)`);
+            continue;
+          }
+          
+          await wsManager.updatePackageDependency(pkg.name, changedPackage, versionChange.new);
+          console.log(`✅ 已更新 ${pkg.name} 中的依赖 ${changedPackage}: ${versionChange.old} -> ${versionChange.new}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * 获取依赖更新策略
+   */
+  getDependencyUpdateStrategies(
+    packages: PackageInfo[],
+    versionChanges: Map<string, { old: string; new: string }>
+  ): DependencyUpdateStrategy[] {
+    const strategies: DependencyUpdateStrategy[] = [];
+    
+    for (const pkg of packages) {
+      for (const [changedPackage, versionChange] of versionChanges) {
+        // 检查各种依赖类型
+        const checkDependency = (deps: Record<string, string>, isDirect: boolean = true) => {
+          if (deps[changedPackage]) {
+            strategies.push({
+              packageName: pkg.name,
+              dependencyName: changedPackage,
+              oldVersion: versionChange.old,
+              newVersion: versionChange.new,
+              isDirect
+            });
+          }
+        };
+
+        checkDependency(pkg.dependencies, true);
+        checkDependency(pkg.devDependencies, false);
+        checkDependency(pkg.peerDependencies, false);
+      }
+    }
+
+    return strategies;
   }
 
   /**
@@ -238,7 +309,7 @@ export class VersionManager {
                                    dependent.devDependencies[strategy.package] || 
                                    dependent.peerDependencies[strategy.package];
             
-            if (requiredVersion && !semver.satisfies(newVersion, requiredVersion)) {
+            if (requiredVersion && !requiredVersion.startsWith('workspace:') && !semver.satisfies(newVersion, requiredVersion)) {
               conflicts.push(
                 `${dependentName} 需要 ${strategy.package}@${requiredVersion}，但计划更新到 ${newVersion}`
               );
