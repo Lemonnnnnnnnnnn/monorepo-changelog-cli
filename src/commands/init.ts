@@ -5,6 +5,9 @@ import { ConfigManager } from '../core/config';
 import { ChangelogGenerator } from '../core/changelog';
 import { PathMatcher } from '../utils/path-matcher';
 import { CommitInfo, PackageInfo, ChangelogMetadata } from '../types';
+import { existsSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { CHANGELOG_FILE_NAME } from '../utils/constants';
 
 export interface InitOptions {
   config?: string;
@@ -33,7 +36,7 @@ export class InitCommand {
   async execute(options: InitOptions): Promise<void> {
     try {
       this.verbose = options.verbose || false;
-      
+
       if (this.verbose) {
         console.log('🚀 开始初始化 changelog 配置...');
       }
@@ -66,7 +69,7 @@ export class InitCommand {
       }
 
       console.log('✅ 初始化完成！');
-      
+
     } catch (error) {
       console.error('❌ 初始化失败:', error);
       process.exit(1);
@@ -118,7 +121,7 @@ export class InitCommand {
     }
 
     const commits = await this.gitManager.getAllCommits();
-    
+
     if (this.verbose) {
       console.log(`✅ 收集到 ${commits.length} 个提交`);
     }
@@ -132,7 +135,7 @@ export class InitCommand {
     }
 
     const packages = await this.workspaceManager.getAllPackages();
-    
+
     if (this.verbose) {
       console.log(`✅ 发现 ${packages.length} 个包:`);
       packages.forEach(pkg => {
@@ -144,7 +147,7 @@ export class InitCommand {
   }
 
   private async analyzePackageCommits(
-    commits: CommitInfo[], 
+    commits: CommitInfo[],
     packages: PackageInfo[]
   ): Promise<Map<string, CommitInfo[]>> {
     if (this.verbose) {
@@ -152,7 +155,7 @@ export class InitCommand {
     }
 
     const packageCommits = new Map<string, CommitInfo[]>();
-    
+
     // 初始化每个包的提交列表
     packages.forEach(pkg => {
       packageCommits.set(pkg.name, []);
@@ -161,7 +164,7 @@ export class InitCommand {
     // 分析每个提交影响的包
     for (const commit of commits) {
       const affectedPackages = await this.getAffectedPackages(commit, packages);
-      
+
       for (const pkg of affectedPackages) {
         const commitList = packageCommits.get(pkg.name) || [];
         commitList.push(commit);
@@ -180,14 +183,14 @@ export class InitCommand {
   }
 
   private async getAffectedPackages(
-    commit: CommitInfo, 
+    commit: CommitInfo,
     packages: PackageInfo[]
   ): Promise<PackageInfo[]> {
     const affectedPackages: PackageInfo[] = [];
 
     for (const file of commit.files) {
       const packagesByFile = await this.workspaceManager.getPackagesByFilePath(file);
-      
+
       for (const pkg of packagesByFile) {
         if (!affectedPackages.find(p => p.name === pkg.name)) {
           affectedPackages.push(pkg);
@@ -216,11 +219,11 @@ export class InitCommand {
       }
 
       // 过滤提交
-      const filteredCommits = includeAll 
-        ? commits 
+      const filteredCommits = includeAll
+        ? commits
         : commits.filter(commit => {
-            return !commit.type || commitTypes.includes(commit.type);
-          });
+          return !commit.type || commitTypes.includes(commit.type);
+        });
 
       if (filteredCommits.length === 0) {
         continue;
@@ -228,7 +231,13 @@ export class InitCommand {
 
       // 获取最新的提交哈希
       const latestCommit = filteredCommits[0];
-      
+
+      // remove old changelog
+      const changelogPath = join(pkg.path, CHANGELOG_FILE_NAME);
+      if (existsSync(changelogPath)) {
+        unlinkSync(changelogPath);
+      }
+
       // 生成 changelog
       await this.changelogGenerator.generatePackageChangelog(
         pkg,
@@ -244,7 +253,7 @@ export class InitCommand {
 
   private previewChanges(packageCommits: Map<string, CommitInfo[]>): void {
     console.log('\n📋 预览模式 - 将要生成的文件:');
-    
+
     packageCommits.forEach((commits, packageName) => {
       if (commits.length > 0) {
         console.log(`📄 ${packageName}/CHANGELOG.md (${commits.length} 个提交)`);
@@ -253,7 +262,7 @@ export class InitCommand {
   }
 
   private async updateCache(
-    commits: CommitInfo[], 
+    commits: CommitInfo[],
     packages: PackageInfo[]
   ): Promise<void> {
     if (this.verbose) {
@@ -268,7 +277,7 @@ export class InitCommand {
     // 更新每个包的最后提交
     const packageCommits: Record<string, string> = {};
     for (const pkg of packages) {
-      const relevantCommits = commits.filter(commit => 
+      const relevantCommits = commits.filter(commit =>
         this.pathMatcher.doesAnyFileAffectPackage(commit.files, pkg.path)
       );
 
@@ -279,7 +288,7 @@ export class InitCommand {
           console.log(`最新相关提交: ${relevantCommits[0].hash}`);
         }
       }
-      
+
       if (relevantCommits.length > 0) {
         packageCommits[pkg.name] = relevantCommits[0].hash;
       }
